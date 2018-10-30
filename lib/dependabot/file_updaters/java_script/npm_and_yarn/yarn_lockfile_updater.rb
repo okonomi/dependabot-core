@@ -52,6 +52,9 @@ module Dependabot
               updated_files =
                 run_yarn_updater(path: Pathname.new(yarn_lock.name).dirname)
 
+              warnings = updated_files.fetch("peerDependencyWarnings")
+              raise "Uh oh: #{warnings}" if warnings.any?
+
               updated_files.fetch("yarn.lock")
             end
           rescue SharedHelpers::HelperSubprocessFailed => error

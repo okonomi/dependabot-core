@@ -50,6 +50,7 @@ class LightweightAdd extends Add {
   async bailout(patterns, workspaceLayout) {
     // This is the only part of the original bailout implementation that
     // matters: saving the new lockfile
+    await this.linker.resolvePeerModules();
     await this.saveLockfileAndIntegrity(patterns, workspaceLayout);
 
     // Skip over the unnecessary steps - fetching and linking packages, etc.
@@ -61,6 +62,14 @@ class LightweightInstall extends Install {
   async bailout(patterns, workspaceLayout) {
     await this.saveLockfileAndIntegrity(patterns, workspaceLayout);
     return true;
+  }
+}
+
+class DependabotReporter extends EventReporter {
+  warn(msg) {
+    if (msg.includes("incorrect peer dependency")) {
+      throw new Error(msg);
+    }
   }
 }
 
@@ -148,7 +157,7 @@ async function updateDependencyFile(
     dev: devRequirement(requirements),
     optional: optionalRequirement(requirements)
   };
-  const reporter = new EventReporter();
+  const reporter = new DependabotReporter();
   const config = new Config(reporter);
   await config.init({
     cwd: path.join(directory, path.dirname(requirements.file)),

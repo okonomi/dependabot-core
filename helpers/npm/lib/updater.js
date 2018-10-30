@@ -63,8 +63,11 @@ async function updateDependencyFiles(
   }
 
   const updatedLockfile = readFile(lockfile_name);
+  const peerDependencyWarnings = initial_installer.idealTree.warnings.filter(warning => {
+    return warning.code === 'EPEERINVALID';
+  }).map(warning => { return warning.message });
 
-  return { [lockfile_name]: updatedLockfile };
+  return { [lockfile_name]: updatedLockfile, "peerDependencyWarnings": peerDependencyWarnings };
 }
 
 function install_args(depName, desiredVersion, requirements, oldLockfile) {

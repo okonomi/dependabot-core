@@ -36,6 +36,10 @@ module Dependabot
 
                 updated_files = Dir.chdir(path) { run_npm_updater(name) }
                 updated_content = updated_files.fetch(name)
+
+                warnings = updated_files.fetch("peerDependencyWarnings")
+                raise "Uh oh: #{warnings}" if warnings.any?
+
                 updated_content = post_process_npm_lockfile(updated_content)
                 raise "No change!" if lockfile.content == updated_content
 

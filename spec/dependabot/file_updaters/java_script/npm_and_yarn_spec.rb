@@ -835,6 +835,105 @@ RSpec.describe Dependabot::FileUpdaters::JavaScript::NpmAndYarn do
           end
         end
       end
+
+      context "when a peer dependency requirement isn't met" do
+        context "updating the dependency with the requirement" do
+          let(:dependency) do
+            Dependabot::Dependency.new(
+              name: "react-dom",
+              version: "16.3.1",
+              package_manager: "npm_and_yarn",
+              requirements: [{
+                file: "package.json",
+                requirement: "^16.3.0",
+                groups: ["dependencies"],
+                source: nil
+              }],
+              previous_version: "15.5.0",
+              previous_requirements: [{
+                file: "package.json",
+                requirement: "^15.2.0",
+                groups: ["dependencies"],
+                source: nil
+              }]
+            )
+          end
+          let(:manifest_fixture_name) { "peer_dependency.json" }
+          let(:npm_lock_fixture_name) { "peer_dependency.json" }
+
+          # TODO: This should be moved to the UpdateChecker - it's only here
+          # as a proof of concept. Further, it needs to work when `react` is
+          # being updated, not just when `react-dom` is (if you change the name
+          # of the dependency above you'll see that that fails).
+          it "raises an error (proof of concept)" do
+            expect { updated_npm_lock }.to raise_error(/of react\@\^16\.0\.0/)
+          end
+        end
+
+        context "updating the required dependency" do
+          let(:dependency) do
+            Dependabot::Dependency.new(
+              name: "react",
+              version: "16.3.1",
+              package_manager: "npm_and_yarn",
+              requirements: [{
+                file: "package.json",
+                requirement: "^16.3.0",
+                groups: ["dependencies"],
+                source: nil
+              }],
+              previous_version: "15.6.2",
+              previous_requirements: [{
+                file: "package.json",
+                requirement: "^15.2.0",
+                groups: ["dependencies"],
+                source: nil
+              }]
+            )
+          end
+          let(:manifest_fixture_name) { "peer_dependency.json" }
+          let(:npm_lock_fixture_name) { "peer_dependency.json" }
+
+          # TODO: This should be moved to the UpdateChecker - it's only here
+          # as a proof of concept.
+          pending "raises an error (proof of concept)" do
+            expect { updated_npm_lock }.to raise_error(/of react\@\^15\.0\.0/)
+          end
+        end
+      end
+
+      context "when a peer dependency requirement is met" do
+        let(:dependency) do
+          Dependabot::Dependency.new(
+            name: "react-dom",
+            version: "15.6.2",
+            package_manager: "npm_and_yarn",
+            requirements: [{
+              file: "package.json",
+              requirement: "^15.6.2",
+              groups: [],
+              source: nil
+            }],
+            previous_version: "15.5.0",
+            previous_requirements: [{
+              file: "package.json",
+              requirement: "^15.2.0",
+              groups: [],
+              source: nil
+            }]
+          )
+        end
+        let(:manifest_fixture_name) { "peer_dependency.json" }
+        let(:npm_lock_fixture_name) { "peer_dependency.json" }
+
+        # TODO: This should be moved to the UpdateChecker - it's only here
+        # as a proof of concept.
+        it "has details of the updated item" do
+          parsed_lockfile = JSON.parse(updated_npm_lock.content)
+          expect(parsed_lockfile["dependencies"]["react-dom"]["version"]).
+            to eq("15.6.2")
+        end
+      end
     end
 
     describe "the updated yarn_lock" do
@@ -879,6 +978,74 @@ RSpec.describe Dependabot::FileUpdaters::JavaScript::NpmAndYarn do
 
         it "has details of the updated item (doesn't error)" do
           expect(updated_yarn_lock.content).to include("fetch-factory@^0.0.2")
+        end
+      end
+
+      context "when a peer dependency requirement isn't met" do
+        context "updating the dependency with the requirement" do
+          let(:dependency) do
+            Dependabot::Dependency.new(
+              name: "react-dom",
+              version: "16.3.1",
+              package_manager: "npm_and_yarn",
+              requirements: [{
+                file: "package.json",
+                requirement: "^16.3.0",
+                groups: ["dependencies"],
+                source: nil
+              }],
+              previous_version: "15.6.2",
+              previous_requirements: [{
+                file: "package.json",
+                requirement: "^15.2.0",
+                groups: ["dependencies"],
+                source: nil
+              }]
+            )
+          end
+          let(:manifest_fixture_name) { "peer_dependency.json" }
+          let(:yarn_lock_fixture_name) { "peer_dependency.lock" }
+
+          # TODO: This should be moved to the UpdateChecker - it's only here
+          # as a proof of concept. Further, it needs to work when `react` is
+          # being updated, not just when `react-dom` is (if you change the name
+          # of the dependency above you'll see that that fails).
+          it "raises an error (proof of concept)" do
+            expect { updated_yarn_lock }.
+              to raise_error(/incorrect peer dependency "react\@\^16\.0\.0"/)
+          end
+        end
+
+        context "updating the required dependency" do
+          let(:dependency) do
+            Dependabot::Dependency.new(
+              name: "react",
+              version: "16.3.1",
+              package_manager: "npm_and_yarn",
+              requirements: [{
+                file: "package.json",
+                requirement: "^16.3.0",
+                groups: ["dependencies"],
+                source: nil
+              }],
+              previous_version: "15.6.2",
+              previous_requirements: [{
+                file: "package.json",
+                requirement: "^15.2.0",
+                groups: ["dependencies"],
+                source: nil
+              }]
+            )
+          end
+          let(:manifest_fixture_name) { "peer_dependency.json" }
+          let(:npm_lock_fixture_name) { "peer_dependency.json" }
+
+          # TODO: This should be moved to the UpdateChecker - it's only here
+          # as a proof of concept.
+          it "raises an error (proof of concept)" do
+            expect { updated_yarn_lock }.
+              to raise_error(/incorrect peer dependency "react\@\^15\.6\.2"/)
+          end
         end
       end
 
