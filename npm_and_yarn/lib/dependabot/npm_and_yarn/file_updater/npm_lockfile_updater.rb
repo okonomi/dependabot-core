@@ -69,12 +69,19 @@ module Dependabot
           end
         end
 
+        def lockfile_dependencies(lockfile)
+          @lockfile_dependencies ||= {}
+          @lockfile_dependencies[lockfile.name] ||=
+            NpmAndYarn::FileParser.new(
+              dependency_files: [lockfile, *package_files],
+              source: nil,
+              credentials: credentials
+            ).parse
+        end
+
         def dependency_up_to_date?(lockfile, dependency)
-          existing_dep = NpmAndYarn::FileParser.new(
-            dependency_files: [lockfile, *package_files],
-            source: nil,
-            credentials: credentials
-          ).parse.find { |dep| dep.name == dependency.name }
+          existing_dep = lockfile_dependencies(lockfile).
+                         find { |dep| dep.name == dependency.name }
 
           # If the dependency is missing but top level it should be treated as
           # not up to date
@@ -168,17 +175,8 @@ module Dependabot
               error.message.match(MISSING_PACKAGE).
               named_captures["package_req"].
               split(/(?<=\w)\@/).first
+
             handle_missing_package(package_name, error, lockfile)
-          end
-          names = dependencies.map(&:name)
-          if names.any? { |name| error.message.include?("#{name}@") } &&
-             error.message.start_with?("No matching vers") &&
-             resolvable_before_update?(lockfile)
-            # This happens if a new version has been published that relies on
-            # but npm is having consistency issues. We raise a bespoke error
-            # so we can capture and ignore it if we're trying to create a new
-            # PR (which will be created successfully at a later date).
-            raise Dependabot::InconsistentRegistryResponse, error.message
           end
 
           # When the package.json doesn't include a name or version, or name
@@ -193,19 +191,55 @@ module Dependabot
              error.message.include?("Non-registry package missing package") ||
              error.message.include?("Cannot read property 'match' of ") ||
              error.message.include?("Invalid tag name")
-            # This happens if a new version has been published that relies on
-            # subdependencies that have not yet been published.
-            raise if resolvable_before_update?(lockfile)
+            unless resolvable_before_update?(lockfile)
+              raise_resolvability_error(error, lockfile)
+            end
 
-            raise_resolvability_error(error, lockfile)
+            # TODO: Move this logic to the version resolver and check if a new
+            # version and all of its subdependencies are resolvable
+
+            # Make sure the error in question matches the current list of
+            # dependencies or matches an existing scoped package, this handles
+            # the case where a new version (e.g. @angular-devkit/build-angular)
+            # relies on a added dependency which hasn't been published yet under
+            # the same scope (e.g. @angular-devkit/build-optimizer)
+            #
+            # This seems to happen when big monorepo projects publish all of
+            # their packages sequentially, which might take enough time for
+            # Dependabot to hear about a new version before all of its
+            # dependencies have been published.
+            names = dependencies.map(&:name).map do |name|
+              name.split("/").first
+            end
+            if names.any? { |name| error.message.include?(name) }
+              # This happens if a new version has been published but npm is
+              # having consistency issues
+
+              # OR
+
+              # The new version relies on subdependencies that have not yet been
+              # published
+
+              # We raise a bespoke error so we can capture and ignore it if
+              # we're trying to create a new PR (which will be created
+              # successfully at a later date).
+              raise Dependabot::InconsistentRegistryResponse, error.message
+            end
+
+            # Dependabot has probably messed something up with the update and we
+            # want to hear about it
+            raise error
           end
+
           if error.message.match?(FORBIDDEN_PACKAGE)
             package_name =
               error.message.match(FORBIDDEN_PACKAGE).
               named_captures["package_req"].
               split(/(?<=\w)\@/).first
+
             handle_missing_package(package_name, error, lockfile)
           end
+
           if error.message.match?(UNREACHABLE_GIT)
             dependency_url =
               error.message.match(UNREACHABLE_GIT).
@@ -213,7 +247,8 @@ module Dependabot
 
             raise Dependabot::GitDependenciesNotReachable, dependency_url
           end
-          raise
+
+          raise error
         end
         # rubocop:enable Metrics/AbcSize
         # rubocop:enable Metrics/CyclomaticComplexity

@@ -190,21 +190,44 @@ module Dependabot
 
           if error.message.start_with?("Couldn't find any versions") ||
              error.message.include?(": Not found")
+            unless resolvable_before_update?(yarn_lock)
+              raise_resolvability_error(error, yarn_lock)
+            end
 
-            names = dependencies.map(&:name)
-            if names.any? { |name| error.message.include?(%("#{name}")) }
+            # TODO: Move this logic to the version resolver and check if a new
+            # version and all of its subdependencies are resolvable
+
+            # Make sure the error in question matches the current list of
+            # dependencies or matches an existing scoped package, this handles
+            # the case where a new version (e.g. @angular-devkit/build-angular)
+            # relies on a added dependency which hasn't been published yet under
+            # the same scope (e.g. @angular-devkit/build-optimizer)
+            #
+            # This seems to happen when big monorepo projects publish all of
+            # their packages sequentially, which might take enough time for
+            # Dependabot to hear about a new version before all of its
+            # dependencies have been published.
+            names = dependencies.map(&:name).map do |name|
+              name.split("/").first
+            end
+            if names.any? { |name| error.message.include?(name) }
               # This happens if a new version has been published but npm is
-              # having consistency issues. We raise a bespoke error so we can
-              # capture and ignore it if we're trying to create a new PR
-              # (which will be created successfully at a later date).
+              # having consistency issues
+
+              # OR
+
+              # The new version relies on subdependencies that have not yet been
+              # published
+
+              # We raise a bespoke error so we can capture and ignore it if
+              # we're trying to create a new PR (which will be created
+              # successfully at a later date).
               raise Dependabot::InconsistentRegistryResponse, error.message
             end
 
-            # This happens if a new version has been published that relies on
-            # subdependencies that have not yet been published.
-            raise error if resolvable_before_update?(yarn_lock)
-
-            raise_resolvability_error(error, yarn_lock)
+            # Dependabot has probably messed something up with the update and we
+            # want to hear about it
+            raise error
           end
 
           if error.message.include?("Workspaces can only be enabled in priva")
@@ -219,10 +242,10 @@ module Dependabot
           end
 
           if error.message.match?(TIMEOUT_FETCHING_PACKAGE)
-            handle_timeout(error.message)
+            handle_timeout(error.message, yarn_lock)
           end
 
-          raise
+          raise error
         end
         # rubocop:enable Metrics/AbcSize
         # rubocop:enable Metrics/CyclomaticComplexity
@@ -368,12 +391,19 @@ module Dependabot
           content.lines.reject { |l| l.match?(/\s*integrity sha/) }.join
         end
 
+        def lockfile_dependencies(lockfile)
+          @lockfile_dependencies ||= {}
+          @lockfile_dependencies[lockfile.name] ||=
+            NpmAndYarn::FileParser.new(
+              dependency_files: [lockfile, *package_files],
+              source: nil,
+              credentials: credentials
+            ).parse
+        end
+
         def handle_missing_package(package_name, error, yarn_lock)
-          missing_dep = NpmAndYarn::FileParser.new(
-            dependency_files: dependency_files,
-            source: nil,
-            credentials: credentials
-          ).parse.find { |dep| dep.name == package_name }
+          missing_dep = lockfile_dependencies(yarn_lock).
+                        find { |dep| dep.name == package_name }
 
           raise_resolvability_error(error, yarn_lock) unless missing_dep
 
@@ -406,7 +436,7 @@ module Dependabot
           raise Dependabot::DependencyFileNotResolvable, msg
         end
 
-        def handle_timeout(message)
+        def handle_timeout(message, yarn_lock)
           url = message.match(TIMEOUT_FETCHING_PACKAGE).named_captures["url"]
           return if url.start_with?("https://registry.npmjs.org")
 
@@ -414,11 +444,8 @@ module Dependabot
             message.match(TIMEOUT_FETCHING_PACKAGE).
             named_captures["package"].gsub("%2f", "/").gsub("%2F", "/")
 
-          dep = NpmAndYarn::FileParser.new(
-            dependency_files: dependency_files,
-            source: nil,
-            credentials: credentials
-          ).parse.find { |d| d.name == package_name }
+          dep = lockfile_dependencies(yarn_lock).
+                find { |d| d.name == package_name }
           return unless dep
 
           raise PrivateSourceTimedOut, url.gsub(%r{https?://}, "")
