@@ -7,12 +7,26 @@ require "dependabot/dependency_file"
 require "dependabot/pull_request_updater/gitlab"
 
 RSpec.describe Dependabot::PullRequestUpdater::Gitlab do
+  subject(:updater) do
+    described_class.new(
+    )
+  end
+
+  let(:source) do
+    Dependabot::Source.new(provider: "gitlab", repo: "gitlab-org/gitlab-ce")
+  end
+  let(:watched_repo_url) { "https://api.gitlab.com/projects/#{source.repo}" }
+
   describe "#update" do
     context "when the branch doesn't exist" do
       it "doesn't push a commit to GitLab" do
+        updater.update
+        expect(WebMock).
+          to_not have_requested(:post, "#{watched_repo_url}/git/trees")
       end
 
       it "returns nil" do
+        expect(updater.update).to be_nil
       end
     end
 
