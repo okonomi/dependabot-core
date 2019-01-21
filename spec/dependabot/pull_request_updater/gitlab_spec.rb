@@ -15,7 +15,9 @@ RSpec.describe Dependabot::PullRequestUpdater::Gitlab do
   let(:source) do
     Dependabot::Source.new(provider: "gitlab", repo: "gitlab-org/gitlab-ce")
   end
+  let(:pull_request_number) { 1 }
   let(:watched_repo_url) { "https://api.gitlab.com/projects/#{source.repo}" }
+  let(:pull_request_url) { watched_repo_url + "/merge_requests/#{pull_request_number}" }
 
   describe "#update" do
     context "when the branch doesn't exist" do
@@ -52,6 +54,9 @@ RSpec.describe Dependabot::PullRequestUpdater::Gitlab do
 
       context "but this PR wasn't targeting the default branch" do
         it "does not update the base branch" do
+          updater.update
+
+          expect(WebMock).to_not have_requested(:patch, pull_request_url)
         end
       end
     end
